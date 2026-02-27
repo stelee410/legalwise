@@ -130,22 +130,68 @@ export async function getSessionMessages(sessionId: string): Promise<MessageItem
   return data?.messages ?? [];
 }
 
-/** 用 simulate 根据前 N 条消息生成标题 - POST /api/v1/agents/{id}/simulate */
+/** Simple Chat 请求参数 */
+export interface SimpleChatRequest {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  system_prompt?: string;
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+/** Simple Chat 响应 */
+export interface SimpleChatResponse {
+  content: string;
+  model: string;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
+}
+
+/**
+ * 简单对话 - POST /api/v1/chat
+ * 文档 §4.8：直接使用系统配置的 LLM 进行对话，不创建会话、不存库
+ */
+export async function simpleChat(params: SimpleChatRequest): Promise<SimpleChatResponse> {
+  const res = await requestWithAuth('/api/v1/chat', {
+    method: 'POST',
+    body: params,
+  });
+  const data = await parseJsonResponse<{ success?: boolean; data?: SimpleChatResponse } & SimpleChatResponse>(res);
+  // 兼容两种响应格式：{ success, data: {...} } 或直接 { content, model, usage }
+  if (data?.data) {
+    return data.data;
+  }
+  return {
+    content: data?.content ?? '',
+    model: data?.model ?? '',
+    usage: data?.usage,
+  };
+}
+
+/**
+ * 根据前 N 条消息生成对话标题 - 使用 Simple Chat API
+ * 文档 §4.8：使用系统 LLM，无需 Agent ID
+ */
 export async function generateSessionTitle(
-  agentId: string,
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
   const first3 = messages.slice(0, 3);
-  const prompt = `根据以下对话内容，生成一个简短的标题（不超过10个字）。只返回标题，不要解释或标点。\n\n${first3.map(m => `${m.role}: ${m.content}`).join('\n')}`;
-
-  const res = await requestWithAuth(`/api/v1/agents/${agentId}/simulate`, {
-    method: 'POST',
-    body: {
-      content: prompt,
-      messages: first3.map(m => ({ role: m.role, content: m.content })),
+  const chatMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    {
+      role: 'user',
+      content: `根据以下对话内容，生成一个简短的标题（不超过10个字）。只返回标题，不要解释或标点。\n\n${first3.map(m => `${m.role}: ${m.content}`).join('\n')}`,
     },
+  ];
+
+  const data = await simpleChat({
+    messages: chatMessages,
+    system_prompt: '你是一个帮助生成对话标题的助手。只返回简短的标题，不要任何解释。',
+    temperature: 0.3,
+    max_tokens: 50,
   });
-  const data = await parseJsonResponse<{ content?: string; text?: string; message?: { content?: string } }>(res);
-  const content = data?.content ?? data?.text ?? (data as { message?: { content?: string } })?.message?.content;
-  return (typeof content === 'string' ? content : '').trim() || '新对话';
+
+  return data.content.trim() || '新对话';
 }

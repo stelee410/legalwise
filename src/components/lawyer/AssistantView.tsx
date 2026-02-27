@@ -280,16 +280,14 @@ export default function AssistantView() {
           const newMessages = [...s.messages, assistantMessage];
           if (newMessages.length === 3 || newMessages.length === 4) {
             const msgList = newMessages.map((m) => ({ role: m.role, content: m.content }));
-            if (agentIdRef.current) {
-              generateSessionTitle(agentIdRef.current, msgList)
-                .then((title) => {
-                  setSessions((latest) =>
-                    latest.map((ls) => (ls.id === currentSessionId ? { ...ls, title } : ls))
-                  );
-                  updateGroupChat(currentSessionId!, { title }).catch(() => {});
-                })
-                .catch(() => {});
-            }
+            generateSessionTitle(msgList)
+              .then((title) => {
+                setSessions((latest) =>
+                  latest.map((ls) => (ls.id === currentSessionId ? { ...ls, title } : ls))
+                );
+                updateGroupChat(currentSessionId!, { title }).catch(() => {});
+              })
+              .catch(() => {});
           }
           return { ...s, messages: newMessages };
         })

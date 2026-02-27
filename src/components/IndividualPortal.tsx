@@ -15,7 +15,7 @@ import {
   filterSingleAgentGroupChats,
   type GroupChatInfo,
 } from '../services/groupChat';
-import { generateSessionTitle, getSystemServiceAgentId, type MessageItem } from '../services/chat';
+import { generateSessionTitle, type MessageItem } from '../services/chat';
 import { SYSTEM_AGENT_CODE } from '../config/api';
 import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput } from './chat';
 import { useFileUpload } from '../hooks/useFileUpload';
@@ -289,12 +289,7 @@ export default function IndividualPortal() {
           const newMessages = [...s.messages, assistantMessage];
           if (newMessages.length === 3 || newMessages.length === 4) {
             const msgList = newMessages.map((m) => ({ role: m.role, content: m.content }));
-            const genTitle = useLinkyunChat
-              ? getSystemServiceAgentId().then((serviceAgentId) =>
-                  generateSessionTitle(serviceAgentId, msgList)
-                )
-              : generateChatTitle(msgList);
-            genTitle
+            generateSessionTitle(msgList)
               .then((title) => {
                 setSessions((latest) =>
                   latest.map((ls) => (ls.id === currentSessionId ? { ...ls, title } : ls))
