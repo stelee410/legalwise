@@ -6,7 +6,28 @@ import {
   nameToCode,
   type AgentInfo,
 } from '../../services/agents';
+import {
+  SYSTEM_AGENT_CODE,
+  SYSTEM_ASSISTANT_AGENT_CODE,
+  SYSTEM_SERVICE_AGENT_CODE,
+} from '../../config/api';
 import DigitalTwinEditView from './DigitalTwinEditView';
+
+/** 需要排除的系统 Agent code 集合 */
+const SYSTEM_AGENT_CODES = new Set(
+  [SYSTEM_AGENT_CODE, SYSTEM_ASSISTANT_AGENT_CODE, SYSTEM_SERVICE_AGENT_CODE]
+    .filter((c): c is string => !!c?.trim())
+    .map((c) => c.trim().toLowerCase())
+);
+
+/** 过滤掉系统预设 Agent */
+function filterSystemAgents(agents: AgentInfo[]): AgentInfo[] {
+  if (SYSTEM_AGENT_CODES.size === 0) return agents;
+  return agents.filter((a) => {
+    const code = a.code?.trim().toLowerCase();
+    return !code || !SYSTEM_AGENT_CODES.has(code);
+  });
+}
 
 export default function DigitalTwinView() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -23,7 +44,7 @@ export default function DigitalTwinView() {
       setLoading(true);
       try {
         const list = await listAgents({ limit: 100 });
-        if (!cancelled) setAgents(list);
+        if (!cancelled) setAgents(filterSystemAgents(list));
       } catch {
         if (!cancelled) setAgents([]);
       } finally {
@@ -57,7 +78,7 @@ export default function DigitalTwinView() {
       setCreateName('');
       setCreateDesc('');
       const list = await listAgents({ limit: 100 });
-      setAgents(list);
+      setAgents(filterSystemAgents(list));
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : '创建失败');
     } finally {
@@ -131,7 +152,7 @@ export default function DigitalTwinView() {
       agentId={firstAgent.id}
       onRefresh={async () => {
         const list = await listAgents({ limit: 100 });
-        setAgents(list);
+        setAgents(filterSystemAgents(list));
       }}
     />
   );

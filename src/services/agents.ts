@@ -13,6 +13,7 @@ export interface AgentInfo {
   status?: string;
   system_prompt?: string;
   rag_config?: { knowledge_base_ids?: string[] } | null;
+  knowledge_base_id?: number | null;
   avatar_url?: string;
   avatar_filename?: string;
   avatar?: string | { url?: string; filename?: string };
@@ -117,6 +118,7 @@ export async function updateAgent(
     description: string;
     system_prompt: string;
     rag_config: { knowledge_base_ids?: string[] } | null;
+    knowledge_base_id: number | null;
   }>
 ): Promise<AgentInfo> {
   const res = await requestWithAuth(`/api/v1/agents/${id}`, {

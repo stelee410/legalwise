@@ -67,8 +67,7 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
         setDescription(a.description || '');
         setCode(a.code || '');
         setSystemPrompt(a.system_prompt || '');
-        const ragKb = (a.rag_config as { knowledge_base_id?: string })?.knowledge_base_id;
-        setSelectedKbId(ragKb || '');
+        setSelectedKbId(a.knowledge_base_id ? String(a.knowledge_base_id) : '');
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
       } finally {
@@ -191,9 +190,9 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
         system_prompt: systemPrompt.trim() || undefined,
       };
       if (selectedKbId) {
-        body.rag_config = { knowledge_base_id: selectedKbId };
+        body.knowledge_base_id = Number(selectedKbId);
       } else {
-        body.rag_config = null;
+        body.knowledge_base_id = null;
       }
       await updateAgent(agent.id, body);
       await onRefresh();
