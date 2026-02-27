@@ -190,7 +190,7 @@ export async function generateSessionTitle(
     messages: chatMessages,
     system_prompt: '你是一个帮助生成对话标题的助手。只返回简短的标题，不要任何解释。',
     temperature: 0.3,
-    max_tokens: 50,
+    max_tokens: 1024,
   });
 
   return data.content.trim() || '新对话';

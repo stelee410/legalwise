@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'motion/react';
-import { Menu, RefreshCw, Scale } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Menu, RefreshCw, Scale, Pencil, Sparkles, X, Check } from 'lucide-react';
 import { ChatSession, Message, MessageAttachment } from '../types';
 import {
   getSystemAgentId,
@@ -38,6 +38,9 @@ export default function IndividualPortal() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const [isRegeneratingTitle, setIsRegeneratingTitle] = useState(false);
   const agentIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -186,6 +189,46 @@ export default function IndividualPortal() {
       } catch (e) {
         console.error('加载消息失败', e);
       }
+    }
+  };
+
+  const handleRegenerateTitle = async () => {
+    if (!activeSession || activeSession.messages.length === 0 || isRegeneratingTitle) return;
+    setIsRegeneratingTitle(true);
+    try {
+      const msgList = activeSession.messages.map((m) => ({ role: m.role, content: m.content }));
+      const newTitle = await generateSessionTitle(msgList);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeSessionId ? { ...s, title: newTitle } : s))
+      );
+      if (useLinkyunChat && activeSessionId) {
+        await updateGroupChat(activeSessionId, { title: newTitle }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('重新生成标题失败', e);
+    } finally {
+      setIsRegeneratingTitle(false);
+    }
+  };
+
+  const openEditTitleModal = () => {
+    if (!activeSession) return;
+    setEditTitleValue(activeSession.title || '');
+    setIsEditingTitle(true);
+  };
+
+  const handleSaveTitle = async () => {
+    const newTitle = editTitleValue.trim();
+    if (!newTitle || !activeSessionId) {
+      setIsEditingTitle(false);
+      return;
+    }
+    setSessions((prev) =>
+      prev.map((s) => (s.id === activeSessionId ? { ...s, title: newTitle } : s))
+    );
+    setIsEditingTitle(false);
+    if (useLinkyunChat) {
+      await updateGroupChat(activeSessionId, { title: newTitle }).catch(() => {});
     }
   };
 
@@ -382,17 +425,36 @@ export default function IndividualPortal() {
       />
 
       <main className="flex-1 flex flex-col relative min-w-0">
-        <header className="h-16 border-b border-gray-100 flex items-center px-4 gap-4 bg-white/80 backdrop-blur-md sticky top-0 z-30">
+        <header className="h-16 border-b border-gray-100 flex items-center px-4 gap-2 bg-white/80 backdrop-blur-md sticky top-0 z-30">
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="p-2 hover:bg-gray-100 rounded-lg md:hidden"
           >
             <Menu className="w-6 h-6" />
           </button>
-          <div className="flex-1">
+          <div className="flex-1 flex items-center gap-2 min-w-0">
             <h1 className="font-semibold text-gray-900 truncate">
               {activeSession?.title || '法律AI助手'}
             </h1>
+            {activeSession && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={handleRegenerateTitle}
+                  disabled={isRegeneratingTitle}
+                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                  title="重新生成标题"
+                >
+                  <Sparkles className={`w-4 h-4 ${isRegeneratingTitle ? 'animate-pulse' : ''}`} />
+                </button>
+                <button
+                  onClick={openEditTitleModal}
+                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="编辑标题"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -447,6 +509,60 @@ export default function IndividualPortal() {
           hint="支持图片（jpg/png/gif/webp）与文档（pdf/doc/docx/txt/md）。AI 助手仅供参考，不构成正式法律意见。"
         />
       </main>
+
+      <AnimatePresence>
+        {isEditingTitle && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+            onClick={() => setIsEditingTitle(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">编辑标题</h2>
+                <button
+                  onClick={() => setIsEditingTitle(false)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={editTitleValue}
+                onChange={(e) => setEditTitleValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                placeholder="输入新标题"
+                autoFocus
+              />
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setIsEditingTitle(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveTitle}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  保存
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
