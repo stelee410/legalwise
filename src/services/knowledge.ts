@@ -22,11 +22,47 @@ export interface DocumentInfo {
   name?: string;
   filename?: string;
   file_type?: string;
-  size?: number;
+  file_size?: number;
+  char_count?: number;
   status?: string;
   chunk_count?: number;
   created_at?: string;
+  updated_at?: string;
   [key: string]: unknown;
+}
+
+/** 格式化相对时间 */
+export function formatRelativeTime(dateStr?: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  if (diffDay < 30) return `${diffDay} 天前`;
+  return date.toLocaleDateString('zh-CN');
+}
+
+/** 格式化状态显示 */
+export function formatDocStatus(status?: string): { label: string; color: string } {
+  switch (status) {
+    case 'ready':
+      return { label: 'Active', color: 'text-emerald-600' };
+    case 'processing':
+      return { label: '处理中', color: 'text-amber-600' };
+    case 'pending':
+      return { label: '等待中', color: 'text-gray-500' };
+    case 'failed':
+      return { label: '失败', color: 'text-red-600' };
+    default:
+      return { label: status || '未知', color: 'text-gray-400' };
+  }
 }
 
 /** 知识库列表 - GET /api/v1/knowledge-bases */

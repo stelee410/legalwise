@@ -12,6 +12,7 @@ import {
   deleteGroupChat,
   updateGroupChat,
   pollForAssistantResponse,
+  filterSingleAgentGroupChats,
   type GroupChatInfo,
 } from '../services/groupChat';
 import { generateSessionTitle, getSystemServiceAgentId, type MessageItem } from '../services/chat';
@@ -54,7 +55,9 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
       const agentId = agentIdRef.current ?? (await getSystemAgentId());
       agentIdRef.current = agentId;
       const groupList = await listGroupChats({ agent_id: agentId, limit: 50 });
-      const chatSessions: ChatSession[] = groupList.map((g: GroupChatInfo) => ({
+      // 严格过滤：只保留 participants 中有且只有一个 Agent 且与系统 Agent ID 一致的群聊
+      const filteredList = filterSingleAgentGroupChats(groupList, agentId);
+      const chatSessions: ChatSession[] = filteredList.map((g: GroupChatInfo) => ({
         id: String(g.id),
         title: (g.title ?? (g as { topic?: string }).topic ?? '新对话') as string,
         messages: [],

@@ -6,11 +6,20 @@ import { requestWithAuth, parseJsonResponse } from './api';
 import { SYSTEM_AGENT_CODE } from '../config/api';
 import { getAgentByCode } from './chat';
 
+export interface GroupChatParticipant {
+  id?: string | number;
+  agent_id?: string | number;
+  type?: 'agent' | 'user' | string;
+  [key: string]: unknown;
+}
+
 export interface GroupChatInfo {
   id: string | number;
   title?: string;
   topic?: string;
   created_at?: string;
+  participants?: GroupChatParticipant[];
+  agent_ids?: (string | number)[];
   [key: string]: unknown;
 }
 
@@ -174,6 +183,44 @@ export async function pollForAssistantResponse(
     return (last.content as string).trim();
   }
   return null;
+}
+
+/**
+ * 过滤群聊列表，只保留：
+ * 1. participants 中有且只有一个 Agent 参与者
+ * 2. 且该 Agent 的 id 与指定的 systemAgentId 一致
+ */
+export function filterSingleAgentGroupChats(
+  groups: GroupChatInfo[],
+  systemAgentId: string | number
+): GroupChatInfo[] {
+  const targetId = String(systemAgentId);
+
+  return groups.filter((g) => {
+    // 优先使用 participants 字段
+    if (Array.isArray(g.participants) && g.participants.length > 0) {
+      // 筛选出 agent 类型的参与者
+      const agentParticipants = g.participants.filter(
+        (p) => p.type === 'agent' || p.agent_id != null
+      );
+      // 必须有且只有一个 agent 参与者
+      if (agentParticipants.length !== 1) return false;
+      // 该 agent 的 id 必须与系统 agent id 一致
+      const participant = agentParticipants[0];
+      const participantAgentId = String(participant.agent_id ?? participant.id ?? '');
+      return participantAgentId === targetId;
+    }
+
+    // 回退：使用 agent_ids 字段
+    if (Array.isArray(g.agent_ids)) {
+      // 必须有且只有一个 agent
+      if (g.agent_ids.length !== 1) return false;
+      return String(g.agent_ids[0]) === targetId;
+    }
+
+    // 无法判断时不显示
+    return false;
+  });
 }
 
 export { getSystemAgentId };

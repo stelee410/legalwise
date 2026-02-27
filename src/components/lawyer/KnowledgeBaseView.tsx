@@ -8,6 +8,10 @@ import {
   Upload,
   Trash2,
   FileText as FileTextIcon,
+  Link,
+  Type,
+  X,
+  RefreshCw,
 } from 'lucide-react';
 import {
   listKnowledgeBases,
@@ -15,8 +19,12 @@ import {
   deleteKnowledgeBase,
   listDocuments,
   uploadDocument,
+  addDocumentByUrl,
+  addDocumentByText,
   deleteDocument,
   formatFileSize,
+  formatRelativeTime,
+  formatDocStatus,
   type KnowledgeBaseInfo,
   type DocumentInfo,
 } from '../../services/knowledge';
@@ -37,6 +45,16 @@ export default function KnowledgeBaseView() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [showAddUrl, setShowAddUrl] = useState(false);
+  const [urlValue, setUrlValue] = useState('');
+  const [urlName, setUrlName] = useState('');
+  const [addingUrl, setAddingUrl] = useState(false);
+
+  const [showAddText, setShowAddText] = useState(false);
+  const [textName, setTextName] = useState('');
+  const [textContent, setTextContent] = useState('');
+  const [addingText, setAddingText] = useState(false);
 
   const loadKbList = useCallback(async () => {
     try {
@@ -134,6 +152,59 @@ export default function KnowledgeBaseView() {
     }
   };
 
+  const handleAddUrl = async () => {
+    if (!selectedKb || !urlValue.trim()) return;
+    try {
+      setAddingUrl(true);
+      const doc = await addDocumentByUrl(selectedKb.id, {
+        url: urlValue.trim(),
+        name: urlName.trim() || undefined,
+      });
+      setDocuments((prev) => [...prev, doc]);
+      setShowAddUrl(false);
+      setUrlValue('');
+      setUrlName('');
+      await loadKbList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '添加链接失败');
+    } finally {
+      setAddingUrl(false);
+    }
+  };
+
+  const handleAddText = async () => {
+    if (!selectedKb || !textName.trim() || !textContent.trim()) return;
+    try {
+      setAddingText(true);
+      const doc = await addDocumentByText(selectedKb.id, {
+        name: textName.trim(),
+        content: textContent.trim(),
+      });
+      setDocuments((prev) => [...prev, doc]);
+      setShowAddText(false);
+      setTextName('');
+      setTextContent('');
+      await loadKbList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '添加文本失败');
+    } finally {
+      setAddingText(false);
+    }
+  };
+
+  const refreshDocuments = async () => {
+    if (!selectedKb) return;
+    setDocsLoading(true);
+    try {
+      const docs = await listDocuments(selectedKb.id);
+      setDocuments(docs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '刷新失败');
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
   const filteredKb = kbList.filter(
     (kb) => !searchTerm || (kb.name?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
@@ -154,6 +225,28 @@ export default function KnowledgeBaseView() {
               <p className="text-sm text-gray-500">{selectedKb.description}</p>
             )}
           </div>
+          <button
+            onClick={refreshDocuments}
+            disabled={docsLoading}
+            className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+            title="刷新"
+          >
+            <RefreshCw className={`w-5 h-5 ${docsLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={() => setShowAddUrl(true)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50"
+          >
+            <Link className="w-4 h-4" />
+            添加链接
+          </button>
+          <button
+            onClick={() => setShowAddText(true)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm font-bold hover:bg-gray-50"
+          >
+            <Type className="w-4 h-4" />
+            添加文本
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
@@ -190,31 +283,133 @@ export default function KnowledgeBaseView() {
           </div>
         ) : (
           <div className="space-y-3">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4 hover:shadow-sm transition-all"
-              >
-                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
-                  <FileTextIcon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-gray-900 truncate">{doc.name || doc.filename}</h4>
-                  <p className="text-xs text-gray-400">
-                    {formatFileSize(doc.size)}
-                    {doc.chunk_count ? ` · ${doc.chunk_count} 个分块` : ''}
-                    {doc.status ? ` · ${doc.status}` : ''}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleDeleteDoc(doc)}
-                  className="p-2 text-gray-300 hover:text-red-500 transition-colors"
-                  title="删除"
+            {documents.map((doc) => {
+              const statusInfo = formatDocStatus(doc.status);
+              return (
+                <div
+                  key={doc.id}
+                  className="bg-white p-4 rounded-2xl border border-gray-100 hover:shadow-sm transition-all"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
+                      <FileTextIcon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-gray-900 truncate">{doc.name || doc.filename}</h4>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteDoc(doc)}
+                      className="p-2 text-gray-300 hover:text-red-500 transition-colors"
+                      title="删除"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                    {doc.chunk_count != null && (
+                      <span>{doc.chunk_count} chunks</span>
+                    )}
+                    {doc.file_size != null && (
+                      <span>{formatFileSize(doc.file_size)}</span>
+                    )}
+                    {doc.char_count != null && (
+                      <span>{doc.char_count.toLocaleString()} 字符</span>
+                    )}
+                    <span className={statusInfo.color}>
+                      索引状态 {statusInfo.label}
+                    </span>
+                    {doc.updated_at && (
+                      <span>最后更新 {formatRelativeTime(doc.updated_at)}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {showAddUrl && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-md space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-900">添加链接</h3>
+                <button onClick={() => setShowAddUrl(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                  <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
-            ))}
+              <input
+                type="text"
+                placeholder="文档名称（可选）"
+                value={urlName}
+                onChange={(e) => setUrlName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+              <input
+                type="url"
+                placeholder="https://example.com/document.pdf"
+                value={urlValue}
+                onChange={(e) => setUrlValue(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+              <p className="text-xs text-gray-500">支持网页、PDF 等公开可访问的链接</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowAddUrl(false)}
+                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAddUrl}
+                  disabled={!urlValue.trim() || addingUrl}
+                  className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {addingUrl ? '添加中...' : '添加'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showAddText && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-900">添加纯文本</h3>
+                <button onClick={() => setShowAddText(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="文档名称"
+                value={textName}
+                onChange={(e) => setTextName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+              <textarea
+                placeholder="输入文本内容..."
+                value={textContent}
+                onChange={(e) => setTextContent(e.target.value)}
+                rows={8}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 resize-none"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowAddText(false)}
+                  className="flex-1 py-3 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAddText}
+                  disabled={!textName.trim() || !textContent.trim() || addingText}
+                  className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {addingText ? '添加中...' : '添加'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

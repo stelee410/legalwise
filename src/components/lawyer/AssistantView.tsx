@@ -15,6 +15,7 @@ import {
   deleteGroupChat,
   updateGroupChat,
   pollForAssistantResponse,
+  filterSingleAgentGroupChats,
   type GroupChatInfo,
 } from '../../services/groupChat';
 import type { Message, MessageAttachment, ChatSession } from '../../types';
@@ -44,7 +45,9 @@ export default function AssistantView() {
       const agent = await getAgentByCode(SYSTEM_ASSISTANT_AGENT_CODE!);
       agentIdRef.current = agent.id;
       const groupList = await listGroupChats({ agent_id: agent.id, limit: 50 });
-      const chatSessions: ChatSession[] = groupList.map((g: GroupChatInfo) => ({
+      // 严格过滤：只保留 participants 中有且只有一个 Agent 且与系统 Agent ID 一致的群聊
+      const filteredList = filterSingleAgentGroupChats(groupList, agent.id);
+      const chatSessions: ChatSession[] = filteredList.map((g: GroupChatInfo) => ({
         id: String(g.id),
         title: (g.title ?? (g as { topic?: string }).topic ?? '新对话') as string,
         messages: [],
