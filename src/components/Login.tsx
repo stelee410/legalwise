@@ -200,7 +200,7 @@ export default function Login({ onLogin }: LoginProps) {
           </motion.div>
 
           <p className="text-center text-xs text-gray-400 mt-12">
-            © 2026 法智通 LegalWise AI. 守护您的法律权益。<br />
+            © 2026 律小乖 LegalWise AI. 守护您的法律权益。<br />
             京ICP备20260001号-1
           </p>
         </motion.div>
@@ -227,7 +227,7 @@ export default function Login({ onLogin }: LoginProps) {
           >
             <Scale className="w-8 h-8" />
           </motion.div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">法智通</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">律小乖</h1>
           <p className="text-gray-500 mt-2">专业的法律AI智能平台</p>
         </div>
 
@@ -408,7 +408,7 @@ export default function Login({ onLogin }: LoginProps) {
         </motion.div>
 
         <p className="text-center text-xs text-gray-400 mt-12">
-          © 2026 法智通 LegalWise AI. 守护您的法律权益。<br />
+          © 2026 律小乖 LegalWise AI. 守护您的法律权益。<br />
           京ICP备20260001号-1
         </p>
       </motion.div>
