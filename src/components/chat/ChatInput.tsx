@@ -38,7 +38,7 @@ export default function ChatInput({
   onChange,
   onSend,
   disabled = false,
-  placeholder = '描述您的问题，可上传图片或文档...',
+  placeholder = '描述您的问题',
   pendingFiles,
   onAddFiles,
   onRemoveFile,
@@ -104,7 +104,7 @@ export default function ChatInput({
             )}
             rows={1}
           />
-          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
             <input
               ref={imageInputRef}
               type="file"

@@ -380,7 +380,7 @@ export default function IndividualPortal() {
         onSelectSession={selectSession}
         onCreateSession={createNewSession}
         onDeleteSession={deleteSession}
-        handleLogout={handleLogout}
+        onLogout={handleLogout}
         isSidebarOpen={isSidebarOpen}
         onCloseSidebar={() => setIsSidebarOpen(false)}
         creatingSession={creatingSession}
@@ -445,7 +445,7 @@ export default function IndividualPortal() {
           onChange={setInput}
           onSend={handleSend}
           disabled={isLoading}
-          placeholder="描述您的法律问题，可上传图片或文档..."
+          placeholder="描述您的法律问题"
           pendingFiles={pendingFiles}
           onAddFiles={addFiles}
           onRemoveFile={removePendingFile}
