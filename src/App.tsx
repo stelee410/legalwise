@@ -4,11 +4,15 @@ import Login from './components/Login';
 import IndividualPortal from './components/IndividualPortal';
 import LawyerPortal from './components/LawyerPortal';
 import JudiciaryPortal from './components/JudiciaryPortal';
+import { clearAuth } from './lib/authStorage';
 
 export default function App() {
   const [role, setRole] = useState<Role>(null);
 
-  const handleLogout = () => setRole(null);
+  const handleLogout = () => {
+    clearAuth();
+    setRole(null);
+  };
 
   if (!role) {
     return <Login onLogin={setRole} />;

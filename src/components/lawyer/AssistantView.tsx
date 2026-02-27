@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Menu, RefreshCw } from 'lucide-react';
-import { ChatSession, Message, MessageAttachment } from '../types';
-import { getGeminiResponse, generateChatTitle, type ImagePart } from '../services/gemini';
+import { Bot, Menu, RefreshCw } from 'lucide-react';
+import { SYSTEM_ASSISTANT_AGENT_CODE } from '../../config/api';
 import {
-  getSystemAgentId,
+  getAgentByCode,
+  generateSessionTitle,
+  type MessageItem,
+} from '../../services/chat';
+import {
   listGroupChats,
   createGroupChat,
   getGroupChatMessages,
@@ -13,27 +16,13 @@ import {
   updateGroupChat,
   pollForAssistantResponse,
   type GroupChatInfo,
-} from '../services/groupChat';
-import { generateSessionTitle, getSystemServiceAgentId, type MessageItem } from '../services/chat';
-import { SYSTEM_AGENT_CODE } from '../config/api';
-import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput } from './chat';
-import { useFileUpload } from '../hooks/useFileUpload';
-import { resolvePendingAttachments } from '../services/files';
+} from '../../services/groupChat';
+import type { Message, MessageAttachment, ChatSession } from '../../types';
+import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput } from '../chat';
+import { useFileUpload } from '../../hooks/useFileUpload';
+import { resolvePendingAttachments } from '../../services/files';
 
-const useLinkyunChat = !!SYSTEM_AGENT_CODE?.trim();
-
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.includes(',') ? result.split(',')[1] : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-export default function IndividualPortal({ onLogout }: { onLogout: () => void }) {
+export default function AssistantView() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -47,13 +36,14 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
   const { pendingFiles, addFiles, removePendingFile, clearPendingFiles } = useFileUpload();
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const useLinkyunChat = !!SYSTEM_ASSISTANT_AGENT_CODE?.trim();
 
   const loadGroupChatHistory = React.useCallback(async () => {
     if (!useLinkyunChat) return;
     try {
-      const agentId = agentIdRef.current ?? (await getSystemAgentId());
-      agentIdRef.current = agentId;
-      const groupList = await listGroupChats({ agent_id: agentId, limit: 50 });
+      const agent = await getAgentByCode(SYSTEM_ASSISTANT_AGENT_CODE!);
+      agentIdRef.current = agent.id;
+      const groupList = await listGroupChats({ agent_id: agent.id, limit: 50 });
       const chatSessions: ChatSession[] = groupList.map((g: GroupChatInfo) => ({
         id: String(g.id),
         title: (g.title ?? (g as { topic?: string }).topic ?? '新对话') as string,
@@ -72,12 +62,12 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
     } catch (e) {
       console.error('加载历史群聊失败', e);
     }
-  }, []);
+  }, [useLinkyunChat]);
 
   useEffect(() => {
     if (!useLinkyunChat) return;
     loadGroupChatHistory();
-  }, [loadGroupChatHistory]);
+  }, [loadGroupChatHistory, useLinkyunChat]);
 
   useEffect(() => {
     if (useLinkyunChat && isSidebarOpen) {
@@ -90,30 +80,14 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
   }, [activeSession?.messages]);
 
   const createNewSession = async () => {
-    if (creatingSession) return;
-    if (useLinkyunChat) {
-      setCreatingSession(true);
-      try {
-        const agentId = agentIdRef.current ?? await getSystemAgentId();
-        agentIdRef.current = agentId;
-        const group = await createGroupChat(agentId);
-        const newSession: ChatSession = {
-          id: String(group.id),
-          title: '新对话',
-          messages: [],
-          createdAt: Date.now(),
-        };
-        setSessions((prev) => [newSession, ...prev]);
-        setActiveSessionId(newSession.id);
-        setIsSidebarOpen(false);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setCreatingSession(false);
-      }
-    } else {
+    if (creatingSession || !useLinkyunChat) return;
+    setCreatingSession(true);
+    try {
+      const agentId = agentIdRef.current ?? (await getAgentByCode(SYSTEM_ASSISTANT_AGENT_CODE!)).id;
+      agentIdRef.current = agentId;
+      const group = await createGroupChat(agentId);
       const newSession: ChatSession = {
-        id: Date.now().toString(),
+        id: String(group.id),
         title: '新对话',
         messages: [],
         createdAt: Date.now(),
@@ -121,18 +95,20 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
       setSessions((prev) => [newSession, ...prev]);
       setActiveSessionId(newSession.id);
       setIsSidebarOpen(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCreatingSession(false);
     }
   };
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
     const newSessions = sessions.filter((s) => s.id !== id);
     setSessions(newSessions);
     if (activeSessionId === id) {
       setActiveSessionId(newSessions[0]?.id || null);
     }
-
     if (useLinkyunChat) {
       try {
         await deleteGroupChat(id);
@@ -185,14 +161,14 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
             role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
             content: m.content || '',
             timestamp: m.created_at ? new Date(m.created_at as string).getTime() : Date.now(),
-          attachments: m.attachments?.map((att) => ({
-            type: (att.type === 'image' ? 'image' : 'file') as 'image' | 'file',
-            token: att.token ?? '',
-            mime_type: att.mime_type,
-            name: att.name,
-            size: att.size as number | undefined,
-          })),
-        }));
+            attachments: m.attachments?.map((att) => ({
+              type: (att.type === 'image' ? 'image' : 'file') as 'image' | 'file',
+              token: att.token ?? '',
+              mime_type: att.mime_type,
+              name: att.name,
+              size: att.size as number | undefined,
+            })),
+          }));
         setSessions((prev) =>
           prev.map((s) => (s.id === sessionId ? { ...s, messages: localMessages } : s))
         );
@@ -205,40 +181,20 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
   const handleSend = async () => {
     const text = input.trim();
     const filesToSend = pendingFiles.filter((p) => !p.error);
-    if ((!text && filesToSend.length === 0) || isLoading) return;
+    if ((!text && filesToSend.length === 0) || isLoading || !useLinkyunChat) return;
 
-    const imageFilesForGemini = filesToSend.filter((p) => p.type === 'image');
     setInput('');
     setIsLoading(true);
 
     let currentSessionId = activeSessionId;
     if (!currentSessionId) {
-      if (useLinkyunChat) {
-        setCreatingSession(true);
-        try {
-          const agentId = agentIdRef.current ?? await getSystemAgentId();
-          agentIdRef.current = agentId;
-          const group = await createGroupChat(agentId);
-          const newSession: ChatSession = {
-            id: String(group.id),
-            title: '新对话',
-            messages: [],
-            createdAt: Date.now(),
-          };
-          setSessions((prev) => [newSession, ...prev]);
-          setActiveSessionId(newSession.id);
-          currentSessionId = newSession.id;
-        } catch (e) {
-          console.error(e);
-          setCreatingSession(false);
-          setIsLoading(false);
-          return;
-        } finally {
-          setCreatingSession(false);
-        }
-      } else {
+      setCreatingSession(true);
+      try {
+        const agentId = agentIdRef.current ?? (await getAgentByCode(SYSTEM_ASSISTANT_AGENT_CODE!)).id;
+        agentIdRef.current = agentId;
+        const group = await createGroupChat(agentId);
         const newSession: ChatSession = {
-          id: Date.now().toString(),
+          id: String(group.id),
           title: '新对话',
           messages: [],
           createdAt: Date.now(),
@@ -246,10 +202,17 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
         setSessions((prev) => [newSession, ...prev]);
         setActiveSessionId(newSession.id);
         currentSessionId = newSession.id;
+      } catch (e) {
+        console.error(e);
+        setCreatingSession(false);
+        setIsLoading(false);
+        return;
+      } finally {
+        setCreatingSession(false);
       }
     }
 
-    // §5.2 步骤 1：上传文件获取 token（在构造消息之前完成）
+    // §5.2 步骤 1：上传文件获取 token
     let resolved: Awaited<ReturnType<typeof resolvePendingAttachments>> = [];
     if (filesToSend.length > 0) {
       try {
@@ -314,21 +277,16 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
           const newMessages = [...s.messages, assistantMessage];
           if (newMessages.length === 3 || newMessages.length === 4) {
             const msgList = newMessages.map((m) => ({ role: m.role, content: m.content }));
-            const genTitle = useLinkyunChat
-              ? getSystemServiceAgentId().then((serviceAgentId) =>
-                  generateSessionTitle(serviceAgentId, msgList)
-                )
-              : generateChatTitle(msgList);
-            genTitle
-              .then((title) => {
-                setSessions((latest) =>
-                  latest.map((ls) => (ls.id === currentSessionId ? { ...ls, title } : ls))
-                );
-                if (useLinkyunChat && currentSessionId) {
-                  updateGroupChat(currentSessionId, { title }).catch(() => {});
-                }
-              })
-              .catch(() => {});
+            if (agentIdRef.current) {
+              generateSessionTitle(agentIdRef.current, msgList)
+                .then((title) => {
+                  setSessions((latest) =>
+                    latest.map((ls) => (ls.id === currentSessionId ? { ...ls, title } : ls))
+                  );
+                  updateGroupChat(currentSessionId!, { title }).catch(() => {});
+                })
+                .catch(() => {});
+            }
           }
           return { ...s, messages: newMessages };
         })
@@ -352,77 +310,67 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
     };
 
     try {
-      if (useLinkyunChat) {
-        const res = await sendGroupChatMessage(currentSessionId!, {
-          content: text || defaultContent,
-          attachments: attachForApi,
-          stream: false,
-        });
-        let content = extractFromResponse(res);
-        if (!content) {
-          content = await pollForAssistantResponse(currentSessionId!, 30000, minCount);
-        }
-        if (content) {
-          appendAssistantMessage(content);
-          setSessionLoadError(null);
-        } else {
-          setSessionLoadError(currentSessionId!);
-        }
-      } else {
-        const currentMessages = (
-          sessions.find((s) => s.id === currentSessionId)?.messages ?? []
-        ).concat(userMessage);
-        let lastMessageImages: ImagePart[] | undefined;
-        if (imageFilesForGemini.length) {
-          lastMessageImages = await Promise.all(
-            imageFilesForGemini.map(async (p) => ({
-              mimeType: p.file.type || 'image/jpeg',
-              data: await fileToBase64(p.file),
-            }))
-          );
-        }
-        const aiResponse = await getGeminiResponse(
-          currentMessages.map((m) => ({ role: m.role, content: m.content })),
-          undefined,
-          lastMessageImages
-        );
-        appendAssistantMessage(aiResponse);
+      const res = await sendGroupChatMessage(currentSessionId!, {
+        content: text || defaultContent,
+        attachments: attachForApi,
+        stream: false,
+      });
+      let content = extractFromResponse(res);
+      if (!content) {
+        content = await pollForAssistantResponse(currentSessionId!, 30000, minCount);
       }
-    } catch (error) {
-      console.error(error);
+      if (content) {
+        appendAssistantMessage(content);
+        setSessionLoadError(null);
+      } else {
+        setSessionLoadError(currentSessionId!);
+      }
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const suggestions = ['如何起诉欠款不还？', '劳动合同解除补偿标准', '房屋租赁纠纷处理'];
+  if (!useLinkyunChat) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-center">
+        <Bot className="w-16 h-16 text-gray-300 mb-4" />
+        <h3 className="text-lg font-bold text-gray-700 mb-2">系统助手未配置</h3>
+        <p className="text-sm text-gray-500">
+          请在环境变量中设置 VITE_SYSTEM_ASSISTANT_AGENT_CODE
+        </p>
+      </div>
+    );
+  }
+
+  const suggestions = ['如何起草诉讼状？', '劳动合同相关法条', '公司合规审查要点'];
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="flex h-full bg-white overflow-hidden">
       <ChatSidebar
-        variant="individual"
+        variant="lawyer"
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={selectSession}
         onCreateSession={createNewSession}
         onDeleteSession={deleteSession}
-        onLogout={onLogout}
         isSidebarOpen={isSidebarOpen}
         onCloseSidebar={() => setIsSidebarOpen(false)}
         creatingSession={creatingSession}
       />
 
       <main className="flex-1 flex flex-col relative min-w-0">
-        <header className="h-16 border-b border-gray-100 flex items-center px-4 gap-4 bg-white/80 backdrop-blur-md sticky top-0 z-30">
+        <header className="h-14 border-b border-gray-100 flex items-center px-4 gap-4 bg-white/80 backdrop-blur-md sticky top-0 z-30">
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="p-2 hover:bg-gray-100 rounded-lg md:hidden"
           >
-            <Menu className="w-6 h-6" />
+            <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1">
             <h1 className="font-semibold text-gray-900 truncate">
-              {activeSession?.title || '法律AI助手'}
+              {activeSession?.title || 'AI 律师助手'}
             </h1>
           </div>
         </header>
@@ -430,15 +378,15 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {!activeSession || activeSession.messages.length === 0 ? (
             <ChatEmptyState
-              variant="individual"
-              title="您好，我是您的法律助手"
-              description="您可以向我咨询法律问题、合同审查或法律程序相关建议。"
+              variant="lawyer"
+              title="您好，我是您的律师助手"
+              description="我可以帮助您进行法律文书起草、案例分析、法条检索等工作。"
               suggestions={suggestions}
               onSuggestionClick={setInput}
             />
           ) : (
             activeSession.messages.map((msg) => (
-              <ChatMessageBubble key={msg.id} message={msg} variant="individual" />
+              <ChatMessageBubble key={msg.id} message={msg} variant="lawyer" />
             ))
           )}
           {isLoading && (
@@ -455,7 +403,7 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
               <p className="text-gray-500 text-sm">系统正在忙，请稍后刷新</p>
               <button
                 onClick={() => refreshSessionMessages(activeSessionId!)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-medium hover:bg-emerald-100 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
                 刷新
@@ -466,16 +414,16 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
         </div>
 
         <ChatInput
-          variant="individual"
+          variant="lawyer"
           value={input}
           onChange={setInput}
           onSend={handleSend}
           disabled={isLoading}
-          placeholder="描述您的法律问题，可上传图片或文档..."
+          placeholder="描述您的问题，可上传图片或文档..."
           pendingFiles={pendingFiles}
           onAddFiles={addFiles}
           onRemoveFile={removePendingFile}
-          hint="支持图片（jpg/png/gif/webp）与文档（pdf/doc/docx/txt/md）。AI 助手仅供参考，不构成正式法律意见。"
+          hint="支持图片（jpg/png/gif/webp）与文档（pdf/doc/docx/txt/md）。AI 助手仅供参考。"
         />
       </main>
     </div>
