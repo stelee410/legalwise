@@ -9,6 +9,7 @@ import { getAgentByCode } from './chat';
 export interface GroupChatParticipant {
   id?: string | number;
   agent_id?: string | number;
+  agent_name?: string;
   type?: 'agent' | 'user' | string;
   [key: string]: unknown;
 }
@@ -42,16 +43,19 @@ async function getSystemAgentId(): Promise<string> {
 
 /** 群聊列表 - GET /api/v1/user/group-chats
  * 获取与指定 Agent 相关的群聊历史（支持 agent_id 或 agent_ids 筛选）
+ * @param workspace_id 可选，只返回群聊中所有参与 Agent 都属于指定 workspace 的群聊
  */
 export async function listGroupChats(params?: {
   agent_id?: string | number;
   agent_ids?: (string | number)[];
+  workspace_id?: string | number;
   limit?: number;
   offset?: number;
 }): Promise<GroupChatInfo[]> {
   const query = new URLSearchParams();
   if (params?.agent_id != null) query.set('agent_id', String(params.agent_id));
   if (params?.agent_ids?.length) query.set('agent_ids', params.agent_ids.map(String).join(','));
+  if (params?.workspace_id != null) query.set('workspace_id', String(params.workspace_id));
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.offset) query.set('offset', String(params.offset));
   const url = `/api/v1/user/group-chats${query.toString() ? `?${query}` : ''}`;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, RefreshCw, Scale, Pencil, Sparkles, X, Check } from 'lucide-react';
+import { Menu, RefreshCw, Scale, Pencil, Sparkles, X, Check, Compass, Wrench, Bot, ChevronRight, Loader2 } from 'lucide-react';
 import { ChatSession, Message, MessageAttachment } from '../types';
 import {
   getSystemAgentId,
@@ -12,27 +12,56 @@ import {
   deleteGroupChat,
   updateGroupChat,
   pollForAssistantResponse,
-  filterSingleAgentGroupChats,
   type GroupChatInfo,
 } from '../services/groupChat';
 import { generateSessionTitle, type MessageItem } from '../services/chat';
-import { SYSTEM_AGENT_CODE } from '../config/api';
-import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput } from './chat';
+import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput, type MenuItem } from './chat';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { resolvePendingAttachments } from '../services/files';
-import { clearAuth } from '../lib/authStorage';
+import { clearAuth, getWorkspaceId, setWorkspace } from '../lib/authStorage';
+import {
+  listAgents,
+  getAgentAvatarUrl,
+  type AgentInfo,
+} from '../services/agents';
+import { getAgentByCode } from '../services/chat';
+import {
+  SYSTEM_AGENT_CODE,
+  SYSTEM_ASSISTANT_AGENT_CODE,
+  SYSTEM_SERVICE_AGENT_CODE,
+  API_BASE_URL,
+  WORKSPACE_CODE,
+} from '../config/api';
+import { getUserWorkspaces } from '../services/workspace';
 
 const useLinkyunChat = !!SYSTEM_AGENT_CODE?.trim();
 
+/** 需要排除的系统 Agent code 集合 */
+const SYSTEM_AGENT_CODES = new Set(
+  [SYSTEM_AGENT_CODE, SYSTEM_ASSISTANT_AGENT_CODE, SYSTEM_SERVICE_AGENT_CODE]
+    .filter((c): c is string => !!c?.trim())
+    .map((c) => c.trim().toLowerCase())
+);
+
+/** 过滤掉系统预设 Agent，只保留律师创建的数字人 */
+function filterSystemAgents(agents: AgentInfo[]): AgentInfo[] {
+  if (SYSTEM_AGENT_CODES.size === 0) return agents;
+  return agents.filter((a) => {
+    const code = a.code?.trim().toLowerCase();
+    return !code || !SYSTEM_AGENT_CODES.has(code);
+  });
+}
+
 export default function IndividualPortal() {
   const navigate = useNavigate();
+  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   
   const handleLogout = useCallback(() => {
     clearAuth();
     navigate('/login');
   }, [navigate]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(urlSessionId || null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -41,7 +70,12 @@ export default function IndividualPortal() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleValue, setEditTitleValue] = useState('');
   const [isRegeneratingTitle, setIsRegeneratingTitle] = useState(false);
+  const [isDiscoverOpen, setIsDiscoverOpen] = useState(false);
+  const [lawyerAgents, setLawyerAgents] = useState<AgentInfo[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
+  const [startingChatWithAgent, setStartingChatWithAgent] = useState<string | null>(null);
   const agentIdRef = useRef<string | null>(null);
+  const assistantAgentIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { pendingFiles, addFiles, removePendingFile, clearPendingFiles } = useFileUpload();
@@ -51,17 +85,103 @@ export default function IndividualPortal() {
   const loadGroupChatHistory = React.useCallback(async () => {
     if (!useLinkyunChat) return;
     try {
-      const agentId = agentIdRef.current ?? (await getSystemAgentId());
-      agentIdRef.current = agentId;
-      const groupList = await listGroupChats({ agent_id: agentId, limit: 50 });
-      // 严格过滤：只保留 participants 中有且只有一个 Agent 且与系统 Agent ID 一致的群聊
-      const filteredList = filterSingleAgentGroupChats(groupList, agentId);
-      const chatSessions: ChatSession[] = filteredList.map((g: GroupChatInfo) => ({
-        id: String(g.id),
-        title: (g.title ?? (g as { topic?: string }).topic ?? '新对话') as string,
-        messages: [],
-        createdAt: g.created_at ? new Date(g.created_at as string).getTime() : Date.now(),
-      }));
+      const systemAgentId = agentIdRef.current ?? (await getSystemAgentId());
+      agentIdRef.current = systemAgentId;
+      
+      // 确保 workspace 信息已存储（兼容旧登录用户）
+      let workspaceId = getWorkspaceId();
+      if (!workspaceId && WORKSPACE_CODE?.trim()) {
+        try {
+          const workspaces = await getUserWorkspaces();
+          const targetCode = WORKSPACE_CODE.trim();
+          const found = workspaces.find(
+            (item) => (item.workspace?.code ?? (item as { code?: string }).code) === targetCode
+          );
+          if (found?.workspace?.id) {
+            const ws = found.workspace;
+            setWorkspace({ id: String(ws.id), code: ws.code, name: ws.name });
+            workspaceId = String(ws.id);
+          } else {
+            const itemAny = found as Record<string, unknown> | undefined;
+            const directId = itemAny?.id ?? itemAny?.workspace_id;
+            const directCode = itemAny?.code ?? itemAny?.workspace_code;
+            if (directId && directCode) {
+              setWorkspace({ id: String(directId), code: String(directCode), name: itemAny?.name as string });
+              workspaceId = String(directId);
+            }
+          }
+        } catch (e) {
+          console.error('获取 workspace 信息失败', e);
+        }
+      }
+      
+      // 加载当前 workspace 下的群聊（只返回 Agent 都属于该 workspace 的群聊）
+      const groupList = await listGroupChats({ 
+        limit: 50,
+        ...(workspaceId && { workspace_id: workspaceId }),
+      });
+      
+      // 获取 SYSTEM_ASSISTANT_AGENT_CODE 对应的 Agent ID（用于过滤）
+      let assistantAgentId = assistantAgentIdRef.current;
+      if (!assistantAgentId && SYSTEM_ASSISTANT_AGENT_CODE?.trim()) {
+        try {
+          const assistantAgent = await getAgentByCode(SYSTEM_ASSISTANT_AGENT_CODE);
+          assistantAgentId = String(assistantAgent.id);
+          assistantAgentIdRef.current = assistantAgentId;
+        } catch (e) {
+          console.error('获取 assistant agent 失败', e);
+        }
+      }
+      
+      // 只保留有且只有一个 Agent 的群聊（排除多 Agent 群聊）
+      // 同时排除与 SYSTEM_ASSISTANT_AGENT_CODE 对应 Agent 的聊天
+      const singleAgentChats = groupList.filter((g) => {
+        let agentId: string | undefined;
+        if (Array.isArray(g.participants)) {
+          const agentParticipants = g.participants.filter(
+            (p) => p.type === 'agent' || p.agent_id != null
+          );
+          if (agentParticipants.length !== 1) return false;
+          agentId = String(agentParticipants[0].agent_id ?? agentParticipants[0].id ?? '');
+        } else if (Array.isArray(g.agent_ids)) {
+          if (g.agent_ids.length !== 1) return false;
+          agentId = String(g.agent_ids[0]);
+        } else {
+          return false;
+        }
+        // 排除 SYSTEM_ASSISTANT_AGENT_CODE 对应的 Agent 聊天
+        if (assistantAgentId && agentId === assistantAgentId) {
+          return false;
+        }
+        return true;
+      });
+      const chatSessions: ChatSession[] = singleAgentChats.map((g: GroupChatInfo) => {
+        // 提取群聊中的 Agent 信息
+        let agentId: string | undefined;
+        let agentName: string | undefined;
+        if (Array.isArray(g.participants)) {
+          const agentParticipant = g.participants.find(
+            (p) => p.type === 'agent' || p.agent_id != null
+          );
+          if (agentParticipant) {
+            agentId = String(agentParticipant.agent_id ?? agentParticipant.id ?? '');
+            agentName = (agentParticipant as { agent_name?: string; name?: string }).agent_name
+              ?? (agentParticipant as { name?: string }).name;
+          }
+        } else if (Array.isArray(g.agent_ids) && g.agent_ids.length > 0) {
+          agentId = String(g.agent_ids[0]);
+        }
+        // 判断是否为系统 Agent 群聊
+        const isSystemAgent = agentId === String(systemAgentId);
+        return {
+          id: String(g.id),
+          title: (g.title ?? (g as { topic?: string }).topic ?? '新对话') as string,
+          messages: [],
+          createdAt: g.created_at ? new Date(g.created_at as string).getTime() : Date.now(),
+          agentId: isSystemAgent ? undefined : agentId,
+          agentName: isSystemAgent ? undefined : agentName,
+        };
+      });
       chatSessions.sort((a, b) => b.createdAt - a.createdAt);
       setSessions((prev) => {
         const byId = new Map(prev.map((s) => [s.id, s]));
@@ -69,6 +189,8 @@ export default function IndividualPortal() {
           ...s,
           messages: byId.get(s.id)?.messages ?? s.messages,
           title: byId.get(s.id)?.title ?? s.title,
+          agentId: byId.get(s.id)?.agentId ?? s.agentId,
+          agentName: byId.get(s.id)?.agentName ?? s.agentName,
         }));
       });
     } catch (e) {
@@ -87,9 +209,81 @@ export default function IndividualPortal() {
     }
   }, [useLinkyunChat, isSidebarOpen, loadGroupChatHistory]);
 
+  // 打开发现弹窗时加载律师数字人列表
+  useEffect(() => {
+    if (!isDiscoverOpen) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingAgents(true);
+      try {
+        const list = await listAgents({ status: 'active', limit: 100 });
+        if (!cancelled) {
+          setLawyerAgents(filterSystemAgents(list));
+        }
+      } catch (e) {
+        console.error('加载律师数字人失败', e);
+        if (!cancelled) setLawyerAgents([]);
+      } finally {
+        if (!cancelled) setLoadingAgents(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDiscoverOpen]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSession?.messages]);
+
+  useEffect(() => {
+    if (urlSessionId && urlSessionId !== activeSessionId) {
+      setActiveSessionId(urlSessionId);
+    }
+  }, [urlSessionId, activeSessionId]);
+
+  useEffect(() => {
+    if (!urlSessionId || !useLinkyunChat) return;
+    const session = sessions.find((s) => s.id === urlSessionId);
+    if (session && session.messages.length === 0) {
+      (async () => {
+        try {
+          const messages = await getGroupChatMessages(urlSessionId);
+          const localMessages: Message[] = messages
+            .filter((m) => m.role !== 'system')
+            .map((m, idx) => ({
+              id: m.id || `${urlSessionId}-${idx}`,
+              role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+              content: m.content || '',
+              timestamp: m.created_at ? new Date(m.created_at as string).getTime() : Date.now(),
+              attachments: m.attachments?.map((att) => ({
+                type: (att.type === 'image' ? 'image' : 'file') as 'image' | 'file',
+                token: att.token ?? '',
+                mime_type: att.mime_type,
+                name: att.name,
+                size: att.size as number | undefined,
+              })),
+            }));
+          setSessions((prev) =>
+            prev.map((s) => (s.id === urlSessionId ? { ...s, messages: localMessages } : s))
+          );
+        } catch (e) {
+          console.error('加载消息失败', e);
+        }
+      })();
+    }
+  }, [urlSessionId, sessions]);
+
+  useEffect(() => {
+    if (activeSessionId) {
+      const currentPath = `/individual/chat/${activeSessionId}`;
+      if (window.location.pathname !== currentPath) {
+        navigate(currentPath, { replace: true });
+      }
+    } else if (window.location.pathname !== '/individual') {
+      navigate('/individual', { replace: true });
+    }
+  }, [activeSessionId, navigate]);
 
   const createNewSession = async () => {
     if (creatingSession || !useLinkyunChat) return;
@@ -106,11 +300,37 @@ export default function IndividualPortal() {
       };
       setSessions((prev) => [newSession, ...prev]);
       setActiveSessionId(newSession.id);
+      navigate(`/individual/chat/${newSession.id}`);
       setIsSidebarOpen(false);
     } catch (e) {
       console.error(e);
     } finally {
       setCreatingSession(false);
+    }
+  };
+
+  // 选择律师数字人后创建新对话
+  const startChatWithLawyerAgent = async (agent: AgentInfo) => {
+    if (startingChatWithAgent) return;
+    setStartingChatWithAgent(agent.id);
+    try {
+      const group = await createGroupChat(agent.id);
+      const newSession: ChatSession = {
+        id: String(group.id),
+        title: agent.name || '律师咨询',
+        messages: [],
+        createdAt: Date.now(),
+        agentId: agent.id,
+        agentName: agent.name || '律师助手',
+      };
+      setSessions((prev) => [newSession, ...prev]);
+      setActiveSessionId(newSession.id);
+      navigate(`/individual/chat/${newSession.id}`);
+      setIsDiscoverOpen(false);
+    } catch (e) {
+      console.error('创建律师对话失败', e);
+    } finally {
+      setStartingChatWithAgent(null);
     }
   };
 
@@ -120,7 +340,13 @@ export default function IndividualPortal() {
     const newSessions = sessions.filter((s) => s.id !== id);
     setSessions(newSessions);
     if (activeSessionId === id) {
-      setActiveSessionId(newSessions[0]?.id || null);
+      const nextSession = newSessions[0];
+      setActiveSessionId(nextSession?.id || null);
+      if (nextSession) {
+        navigate(`/individual/chat/${nextSession.id}`);
+      } else {
+        navigate('/individual');
+      }
     }
 
     if (useLinkyunChat) {
@@ -159,37 +385,9 @@ export default function IndividualPortal() {
     }
   }, []);
 
-  const selectSession = async (sessionId: string) => {
-    setActiveSessionId(sessionId);
-    setSessionLoadError(null);
+  const selectSession = (sessionId: string) => {
     setIsSidebarOpen(false);
-
-    const session = sessions.find((s) => s.id === sessionId);
-    if (session && session.messages.length === 0 && useLinkyunChat) {
-      try {
-        const messages = await getGroupChatMessages(sessionId);
-        const localMessages: Message[] = messages
-          .filter((m) => m.role !== 'system')
-          .map((m, idx) => ({
-            id: m.id || `${sessionId}-${idx}`,
-            role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-            content: m.content || '',
-            timestamp: m.created_at ? new Date(m.created_at as string).getTime() : Date.now(),
-          attachments: m.attachments?.map((att) => ({
-            type: (att.type === 'image' ? 'image' : 'file') as 'image' | 'file',
-            token: att.token ?? '',
-            mime_type: att.mime_type,
-            name: att.name,
-            size: att.size as number | undefined,
-          })),
-        }));
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? { ...s, messages: localMessages } : s))
-        );
-      } catch (e) {
-        console.error('加载消息失败', e);
-      }
-    }
+    navigate(`/individual/chat/${sessionId}`);
   };
 
   const handleRegenerateTitle = async () => {
@@ -409,6 +607,22 @@ export default function IndividualPortal() {
     );
   }
 
+  const menuItems: MenuItem[] = [
+    {
+      id: 'discover',
+      label: '发现',
+      icon: Compass,
+      onClick: () => setIsDiscoverOpen(true),
+    },
+    {
+      id: 'tools',
+      label: '工具',
+      icon: Wrench,
+      onClick: () => {},
+      disabled: true,
+    },
+  ];
+
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <ChatSidebar
@@ -422,6 +636,7 @@ export default function IndividualPortal() {
         isSidebarOpen={isSidebarOpen}
         onCloseSidebar={() => setIsSidebarOpen(false)}
         creatingSession={creatingSession}
+        menuItems={menuItems}
       />
 
       <main className="flex-1 flex flex-col relative min-w-0">
@@ -558,6 +773,92 @@ export default function IndividualPortal() {
                   <Check className="w-4 h-4" />
                   保存
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {isDiscoverOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+            onClick={() => setIsDiscoverOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <Compass className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">发现律师数字人</h2>
+                    <p className="text-sm text-gray-500">选择专业领域的 AI 律师助手</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsDiscoverOpen(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[calc(80vh-100px)]">
+                {loadingAgents ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                    <p className="mt-3 text-sm">加载中...</p>
+                  </div>
+                ) : lawyerAgents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                    <Bot className="w-12 h-12 mb-3" />
+                    <p className="text-sm">暂无律师数字人</p>
+                    <p className="text-xs mt-1">律师创建数字分身后将显示在这里</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {lawyerAgents.map((agent) => {
+                      const avatarUrl = getAgentAvatarUrl(agent, API_BASE_URL || '');
+                      const isStarting = startingChatWithAgent === agent.id;
+                      return (
+                        <button
+                          key={agent.id}
+                          onClick={() => startChatWithLawyerAgent(agent)}
+                          disabled={!!startingChatWithAgent}
+                          className="flex items-center gap-4 p-4 bg-gray-50 hover:bg-blue-50 rounded-xl transition-colors text-left group disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm overflow-hidden">
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt={agent.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <Bot className="w-6 h-6 text-blue-500" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-gray-900 group-hover:text-blue-700 transition-colors">
+                              {agent.name || '律师助手'}
+                            </h3>
+                            <p className="text-sm text-gray-500 truncate">{agent.description || '专业法律咨询服务'}</p>
+                          </div>
+                          {isStarting ? (
+                            <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 transition-colors" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {!loadingAgents && lawyerAgents.length > 0 && (
+                  <p className="text-center text-sm text-gray-400 mt-6">点击律师数字人开始咨询</p>
+                )}
               </div>
             </motion.div>
           </motion.div>

@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback } from 'react';
+import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Bot, UserCircle, Database, LogOut, Scale } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -10,9 +10,17 @@ import { clearAuth } from '../lib/authStorage';
 
 type Tab = 'assistant' | 'twin' | 'knowledge';
 
+const validTabs: Tab[] = ['assistant', 'twin', 'knowledge'];
+
 export default function LawyerPortal() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<Tab>('assistant');
+  const { tab } = useParams<{ tab: string }>();
+  
+  const activeTab: Tab = validTabs.includes(tab as Tab) ? (tab as Tab) : 'assistant';
+  
+  if (!tab || !validTabs.includes(tab as Tab)) {
+    return <Navigate to="/lawyer/assistant" replace />;
+  }
 
   const handleLogout = useCallback(() => {
     clearAuth();
@@ -56,18 +64,18 @@ export default function LawyerPortal() {
       </main>
 
       <nav className="bg-white border-t border-gray-100 px-6 py-3 flex justify-around items-center sticky bottom-0">
-        {tabs.map((tab) => (
+        {tabs.map((tabItem) => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as Tab)}
+            key={tabItem.id}
+            onClick={() => navigate(`/lawyer/${tabItem.id}`)}
             className={cn(
               'flex flex-col items-center gap-1 transition-all',
-              activeTab === tab.id ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'
+              activeTab === tabItem.id ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'
             )}
           >
-            <tab.icon className={cn('w-6 h-6', activeTab === tab.id && 'scale-110')} />
-            <span className="text-[10px] font-medium">{tab.label}</span>
-            {activeTab === tab.id && (
+            <tabItem.icon className={cn('w-6 h-6', activeTab === tabItem.id && 'scale-110')} />
+            <span className="text-[10px] font-medium">{tabItem.label}</span>
+            {activeTab === tabItem.id && (
               <motion.div
                 layoutId="activeTab"
                 className="w-1 h-1 bg-emerald-600 rounded-full mt-0.5"

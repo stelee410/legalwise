@@ -5,7 +5,7 @@ import { Scale, Smartphone, Lock, ShieldCheck, ChevronDown, Mail, User, KeyRound
 import { Role } from '../types';
 import { cn } from '../lib/utils';
 import { login, register } from '../services/auth';
-import { setAuth, clearAuth } from '../lib/authStorage';
+import { setAuth, clearAuth, setWorkspace } from '../lib/authStorage';
 import { isApiError } from '../types/auth';
 import { WORKSPACE_CODE, WORKSPACE_JOIN_CODE } from '../config/api';
 import { getUserWorkspaces, joinWorkspace, switchWorkspace } from '../services/workspace';
@@ -63,16 +63,28 @@ export default function Login() {
     const joinCode = WORKSPACE_JOIN_CODE?.trim();
     if (!targetCode) return;
     const list = await getUserWorkspaces();
-    const inWorkspace = list.some(
+    const currentWorkspaceItem = list.find(
       (item) => (item.workspace?.code ?? (item as { code?: string }).code) === targetCode
     );
-    if (inWorkspace) {
+    if (currentWorkspaceItem) {
       await switchWorkspace(targetCode);
+      const ws = currentWorkspaceItem.workspace;
+      if (ws?.id) {
+        setWorkspace({ id: String(ws.id), code: ws.code, name: ws.name });
+      }
       return;
     }
     if (joinCode) {
       await joinWorkspace(joinCode);
       await switchWorkspace(targetCode);
+      const updatedList = await getUserWorkspaces();
+      const joinedWorkspace = updatedList.find(
+        (item) => (item.workspace?.code ?? (item as { code?: string }).code) === targetCode
+      );
+      const ws = joinedWorkspace?.workspace;
+      if (ws?.id) {
+        setWorkspace({ id: String(ws.id), code: ws.code, name: ws.name });
+      }
     }
   };
 

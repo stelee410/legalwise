@@ -19,6 +19,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        
+        {/* 个人用户端路由 */}
         <Route
           path="/individual"
           element={
@@ -28,13 +30,29 @@ export default function App() {
           }
         />
         <Route
+          path="/individual/chat/:sessionId"
+          element={
+            <ProtectedRoute>
+              <IndividualPortal />
+            </ProtectedRoute>
+          }
+        />
+        
+        {/* 律师端路由 - 支持 tab 切换 */}
+        <Route
           path="/lawyer"
+          element={<Navigate to="/lawyer/assistant" replace />}
+        />
+        <Route
+          path="/lawyer/:tab"
           element={
             <ProtectedRoute>
               <LawyerPortal />
             </ProtectedRoute>
           }
         />
+        
+        {/* 司法端路由 */}
         <Route
           path="/judiciary"
           element={
@@ -43,6 +61,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

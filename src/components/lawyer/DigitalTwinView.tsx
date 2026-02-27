@@ -38,13 +38,24 @@ export default function DigitalTwinView() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
+  // 加载草稿和已发布的数字分身
+  const loadAgents = React.useCallback(async () => {
+    const [draftList, activeList] = await Promise.all([
+      listAgents({ status: 'draft', limit: 100 }),
+      listAgents({ status: 'active', limit: 100 }),
+    ]);
+    const combined = [...draftList, ...activeList];
+    const uniqueById = Array.from(new Map(combined.map((a) => [a.id, a])).values());
+    return filterSystemAgents(uniqueById);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const list = await listAgents({ limit: 100 });
-        if (!cancelled) setAgents(filterSystemAgents(list));
+        const list = await loadAgents();
+        if (!cancelled) setAgents(list);
       } catch {
         if (!cancelled) setAgents([]);
       } finally {
@@ -54,7 +65,7 @@ export default function DigitalTwinView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAgents]);
 
   const hasTwin = agents.length > 0;
 
@@ -73,12 +84,12 @@ export default function DigitalTwinView() {
     setCreateError('');
     try {
       const code = nameToCode(name);
-      await createAgent({ name, code, description: createDesc.trim() || undefined });
+      await createAgent({ name, code, description: createDesc.trim() || undefined, status: 'draft' });
       setShowCreate(false);
       setCreateName('');
       setCreateDesc('');
-      const list = await listAgents({ limit: 100 });
-      setAgents(filterSystemAgents(list));
+      const list = await loadAgents();
+      setAgents(list);
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : '创建失败');
     } finally {
@@ -150,9 +161,10 @@ export default function DigitalTwinView() {
   return (
     <DigitalTwinEditView
       agentId={firstAgent.id}
+      agentStatus={firstAgent.status}
       onRefresh={async () => {
-        const list = await listAgents({ limit: 100 });
-        setAgents(filterSystemAgents(list));
+        const list = await loadAgents();
+        setAgents(list);
       }}
     />
   );

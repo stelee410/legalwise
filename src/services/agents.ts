@@ -117,6 +117,7 @@ export async function updateAgent(
     code: string;
     description: string;
     system_prompt: string;
+    status: 'draft' | 'active';
     rag_config: { knowledge_base_ids?: string[] } | null;
     knowledge_base_id: number | null;
   }>
@@ -194,6 +195,7 @@ export async function createAgent(params: {
   temperature?: number;
   agent_type?: 'cloud' | 'edge';
   memory_enabled?: boolean;
+  status?: 'draft' | 'active';
 }): Promise<AgentInfo> {
   const res = await requestWithAuth('/api/v1/agents', {
     method: 'POST',
@@ -206,6 +208,7 @@ export async function createAgent(params: {
       temperature: params.temperature ?? 0.7,
       agent_type: params.agent_type ?? 'cloud',
       memory_enabled: params.memory_enabled ?? false,
+      status: params.status ?? 'draft',
       examples: [],
       skills: [],
       rag_config: null,

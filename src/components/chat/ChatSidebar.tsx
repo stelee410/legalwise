@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, MessageSquare, Trash2, LogOut, X, Loader2 } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, LogOut, X, Loader2, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { ChatSession } from '../../types';
 
@@ -10,12 +10,22 @@ const variantStyles = {
   individual: {
     active: 'bg-blue-50 text-blue-700 border-blue-100',
     inactive: 'hover:bg-gray-100 text-gray-600',
+    menuHover: 'hover:bg-blue-50 hover:text-blue-700',
   },
   lawyer: {
     active: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     inactive: 'hover:bg-gray-100 text-gray-600',
+    menuHover: 'hover:bg-emerald-50 hover:text-emerald-700',
   },
 };
+
+export interface MenuItem {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+}
 
 interface ChatSidebarProps {
   variant?: Variant;
@@ -28,6 +38,7 @@ interface ChatSidebarProps {
   isSidebarOpen: boolean;
   onCloseSidebar: () => void;
   creatingSession?: boolean;
+  menuItems?: MenuItem[];
 }
 
 export default function ChatSidebar({
@@ -41,6 +52,7 @@ export default function ChatSidebar({
   isSidebarOpen,
   onCloseSidebar,
   creatingSession = false,
+  menuItems = [],
 }: ChatSidebarProps) {
   const styles = variantStyles[variant];
 
@@ -65,17 +77,17 @@ export default function ChatSidebar({
         )}
       >
         <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-bold text-lg text-gray-900">历史对话</h2>
+          <h2 className="font-bold text-lg text-gray-900">法律 AI</h2>
           <button onClick={onCloseSidebar} className="md:hidden p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4">
+        <div className="p-4 space-y-2">
           <button
             onClick={onCreateSession}
             disabled={creatingSession}
-            className="w-full flex items-center justify-center gap-2 p-3 bg-white border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
+            className="w-full flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
           >
             {creatingSession ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -84,7 +96,29 @@ export default function ChatSidebar({
             )}
             发起新对话
           </button>
+
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={item.onClick}
+              disabled={item.disabled}
+              className={cn(
+                'w-full flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors text-gray-600',
+                styles.menuHover,
+                item.disabled && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <item.icon className="w-4 h-4" />
+              {item.label}
+            </button>
+          ))}
         </div>
+
+        {sessions.length > 0 && (
+          <div className="px-4 py-2">
+            <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider">历史对话</h3>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto px-4 space-y-2">
           {sessions.map((session) => (
@@ -99,9 +133,16 @@ export default function ChatSidebar({
               )}
             >
               <MessageSquare className="w-4 h-4 shrink-0" />
-              <span className="flex-1 truncate">{session.title}</span>
+              <div className="flex-1 min-w-0">
+                <span className="block truncate">{session.title}</span>
+                {session.agentName && (
+                  <span className="block text-xs text-gray-400 truncate">
+                    {session.agentName}
+                  </span>
+                )}
+              </div>
               <Trash2
-                className="w-4 h-4 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                className="w-4 h-4 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity shrink-0"
                 onClick={(e) => onDeleteSession(session.id, e)}
               />
             </button>

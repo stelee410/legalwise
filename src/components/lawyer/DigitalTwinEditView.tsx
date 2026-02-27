@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserCircle, Image, FileText as FileTextIcon } from 'lucide-react';
+import { UserCircle, Image, FileText as FileTextIcon, Globe, FileEdit } from 'lucide-react';
 import {
   getAgent,
   updateAgent,
@@ -20,15 +20,20 @@ import AvatarCropModal from '../AvatarCropModal';
 
 interface DigitalTwinEditViewProps {
   agentId: string;
+  agentStatus?: string;
   onRefresh: () => Promise<void>;
 }
 
-export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinEditViewProps) {
+export default function DigitalTwinEditView({ agentId, agentStatus, onRefresh }: DigitalTwinEditViewProps) {
   const [agent, setAgent] = useState<AgentInfo | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseInfo[]>([]);
   const [preSkills, setPreSkills] = useState<PreSkillItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<'draft' | 'active'>(
+    agentStatus === 'active' ? 'active' : 'draft'
+  );
   const [error, setError] = useState('');
 
   const [name, setName] = useState('');
@@ -68,6 +73,7 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
         setCode(a.code || '');
         setSystemPrompt(a.system_prompt || '');
         setSelectedKbId(a.knowledge_base_id ? String(a.knowledge_base_id) : '');
+        setCurrentStatus(a.status === 'active' ? 'active' : 'draft');
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
       } finally {
@@ -179,9 +185,14 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (targetStatus?: 'draft' | 'active') => {
     if (!agent) return;
-    setSaving(true);
+    const isPublishing = targetStatus === 'active';
+    if (isPublishing) {
+      setPublishing(true);
+    } else {
+      setSaving(true);
+    }
     setError('');
     try {
       const body: Record<string, unknown> = {
@@ -194,12 +205,19 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
       } else {
         body.knowledge_base_id = null;
       }
+      if (targetStatus) {
+        body.status = targetStatus;
+      }
       await updateAgent(agent.id, body);
+      if (targetStatus) {
+        setCurrentStatus(targetStatus);
+      }
       await onRefresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败');
     } finally {
       setSaving(false);
+      setPublishing(false);
     }
   };
 
@@ -223,6 +241,17 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-2">
         <h2 className="text-xl font-bold text-gray-900">编辑数字分身</h2>
+        {currentStatus === 'active' ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">
+            <Globe className="w-3 h-3" />
+            已发布
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
+            <FileEdit className="w-3 h-3" />
+            草稿
+          </span>
+        )}
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 p-6 space-y-6">
@@ -374,13 +403,29 @@ export default function DigitalTwinEditView({ agentId, onRefresh }: DigitalTwinE
         )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-        >
-          {saving ? '保存中...' : '保存'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleSave('draft')}
+            disabled={saving || publishing}
+            className="flex-1 py-4 border-2 border-gray-200 text-gray-700 rounded-2xl font-bold hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <FileEdit className="w-5 h-5" />
+            {saving ? '保存中...' : '存为草稿'}
+          </button>
+          <button
+            onClick={() => handleSave('active')}
+            disabled={saving || publishing}
+            className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <Globe className="w-5 h-5" />
+            {publishing ? '发布中...' : currentStatus === 'active' ? '保存并发布' : '发布'}
+          </button>
+        </div>
+        {currentStatus === 'draft' && (
+          <p className="text-center text-xs text-gray-400">
+            草稿状态下，个人用户无法在发现页面看到您的数字分身
+          </p>
+        )}
       </div>
     </div>
   );

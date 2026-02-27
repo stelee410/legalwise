@@ -29,7 +29,7 @@ export async function getMarketplaceSkills(): Promise<SkillItem[]> {
 }
 
 /** 从市场添加技能到创作者 - POST /api/v1/creator-skills */
-export async function addCreatorSkill(params: { skill_id?: string; skill_code?: string }): Promise<SkillItem> {
+export async function addCreatorSkill(params: { skill_id?: string; skill_code?: string; name?: string }): Promise<SkillItem> {
   const res = await requestWithAuth('/api/v1/creator-skills', {
     method: 'POST',
     body: params as Record<string, unknown>,
@@ -53,6 +53,9 @@ export async function ensureCreatorHasSkill(
   );
   if (!marketSkill?.id) return false;
 
-  await addCreatorSkill({ skill_id: marketSkill.id });
+  await addCreatorSkill({
+    skill_id: marketSkill.id,
+    name: marketSkill.name || marketSkill.code || 'skill',
+  });
   return true;
 }

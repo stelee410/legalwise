@@ -23,6 +23,10 @@ export interface ChatSession {
   title: string;
   messages: Message[];
   createdAt: number;
+  /** 该会话对应的 Agent ID（律师数字人群聊时有值） */
+  agentId?: string;
+  /** 该会话对应的 Agent 名称（用于在侧边栏显示） */
+  agentName?: string;
 }
 
 export interface User {
