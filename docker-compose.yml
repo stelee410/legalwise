@@ -15,6 +15,7 @@ services:
     container_name: legalwise-frontend
     ports:
       - "80:80"
+      - "81:81"
     restart: unless-stopped
     env_file:
       - .env.local

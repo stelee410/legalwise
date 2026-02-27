@@ -1,8 +1,17 @@
-import React from 'react';
+import React, { useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Clock, ArrowLeft } from 'lucide-react';
+import { clearAuth } from '../lib/authStorage';
 
-export default function JudiciaryPortal({ onBack }: { onBack: () => void }) {
+export default function JudiciaryPortal() {
+  const navigate = useNavigate();
+
+  const handleBack = useCallback(() => {
+    clearAuth();
+    navigate('/login');
+  }, [navigate]);
+
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center">
       <motion.div
@@ -28,7 +37,7 @@ export default function JudiciaryPortal({ onBack }: { onBack: () => void }) {
         </div>
 
         <button
-          onClick={onBack}
+          onClick={handleBack}
           className="flex items-center gap-2 mx-auto text-gray-400 hover:text-gray-600 transition-colors pt-8"
         >
           <ArrowLeft className="w-4 h-4" />

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Menu, RefreshCw, Scale } from 'lucide-react';
 import { ChatSession, Message, MessageAttachment } from '../types';
@@ -19,10 +20,17 @@ import { SYSTEM_AGENT_CODE } from '../config/api';
 import { ChatSidebar, ChatMessageBubble, ChatEmptyState, ChatInput } from './chat';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { resolvePendingAttachments } from '../services/files';
+import { clearAuth } from '../lib/authStorage';
 
 const useLinkyunChat = !!SYSTEM_AGENT_CODE?.trim();
 
-export default function IndividualPortal({ onLogout }: { onLogout: () => void }) {
+export default function IndividualPortal() {
+  const navigate = useNavigate();
+  
+  const handleLogout = useCallback(() => {
+    clearAuth();
+    navigate('/login');
+  }, [navigate]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -354,7 +362,7 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
           请在环境变量中设置 VITE_SYSTEM_AGENT_CODE
         </p>
         <button
-          onClick={onLogout}
+          onClick={handleLogout}
           className="px-6 py-2 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
         >
           返回登录
@@ -372,7 +380,7 @@ export default function IndividualPortal({ onLogout }: { onLogout: () => void })
         onSelectSession={selectSession}
         onCreateSession={createNewSession}
         onDeleteSession={deleteSession}
-        onLogout={onLogout}
+        handleLogout={handleLogout}
         isSidebarOpen={isSidebarOpen}
         onCloseSidebar={() => setIsSidebarOpen(false)}
         creatingSession={creatingSession}

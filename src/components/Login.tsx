@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Scale, Smartphone, Lock, ShieldCheck, ChevronDown, Mail, User, KeyRound, LogOut, ShieldX } from 'lucide-react';
 import { Role } from '../types';
@@ -9,16 +10,13 @@ import { isApiError } from '../types/auth';
 import { WORKSPACE_CODE, WORKSPACE_JOIN_CODE } from '../config/api';
 import { getUserWorkspaces, joinWorkspace, switchWorkspace } from '../services/workspace';
 
-interface LoginProps {
-  onLogin: (role: Role) => void;
-}
-
 type AccessDeniedInfo = {
   role: Role;
   message: string;
 } | null;
 
-export default function Login({ onLogin }: LoginProps) {
+export default function Login() {
+  const navigate = useNavigate();
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role>('individual');
   const [username, setUsername] = useState('');
@@ -102,7 +100,7 @@ export default function Login({ onLogin }: LoginProps) {
         });
         return;
       }
-      onLogin(selectedRole);
+      navigate(`/${selectedRole}`);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : '网络错误，请稍后重试');
     } finally {
@@ -146,7 +144,7 @@ export default function Login({ onLogin }: LoginProps) {
       if (WORKSPACE_CODE?.trim()) {
         await ensureInWorkspace();
       }
-      onLogin(selectedRole);
+      navigate(`/${selectedRole}`);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : '网络错误，请稍后重试');
     } finally {

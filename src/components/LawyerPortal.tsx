@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Bot, UserCircle, Database, LogOut, Scale } from 'lucide-react';
 import { cn } from '../lib/utils';
 import AssistantView from './lawyer/AssistantView';
 import DigitalTwinView from './lawyer/DigitalTwinView';
 import KnowledgeBaseView from './lawyer/KnowledgeBaseView';
+import { clearAuth } from '../lib/authStorage';
 
 type Tab = 'assistant' | 'twin' | 'knowledge';
 
-export default function LawyerPortal({ onLogout }: { onLogout: () => void }) {
+export default function LawyerPortal() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('assistant');
+
+  const handleLogout = useCallback(() => {
+    clearAuth();
+    navigate('/login');
+  }, [navigate]);
 
   const tabs = [
     { id: 'assistant', label: '律助对话', icon: Bot },
@@ -27,7 +35,7 @@ export default function LawyerPortal({ onLogout }: { onLogout: () => void }) {
           <h1 className="font-bold text-gray-900">律师端控制台</h1>
         </div>
         <button
-          onClick={onLogout}
+          onClick={handleLogout}
           className="p-2 text-gray-400 hover:text-red-600 transition-colors"
         >
           <LogOut className="w-5 h-5" />

@@ -1,31 +1,51 @@
-import React, { useState } from 'react';
-import { Role } from './types';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
 import IndividualPortal from './components/IndividualPortal';
 import LawyerPortal from './components/LawyerPortal';
 import JudiciaryPortal from './components/JudiciaryPortal';
-import { clearAuth } from './lib/authStorage';
+import { getAuth } from './lib/authStorage';
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const auth = getAuth();
+  if (!auth) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
 
 export default function App() {
-  const [role, setRole] = useState<Role>(null);
-
-  const handleLogout = () => {
-    clearAuth();
-    setRole(null);
-  };
-
-  if (!role) {
-    return <Login onLogin={setRole} />;
-  }
-
-  switch (role) {
-    case 'individual':
-      return <IndividualPortal onLogout={handleLogout} />;
-    case 'lawyer':
-      return <LawyerPortal onLogout={handleLogout} />;
-    case 'judiciary':
-      return <JudiciaryPortal onBack={handleLogout} />;
-    default:
-      return <Login onLogin={setRole} />;
-  }
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/individual"
+          element={
+            <ProtectedRoute>
+              <IndividualPortal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/lawyer"
+          element={
+            <ProtectedRoute>
+              <LawyerPortal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/judiciary"
+          element={
+            <ProtectedRoute>
+              <JudiciaryPortal />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }

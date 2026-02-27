@@ -50,3 +50,9 @@ export function clearAuth(): void {
     // ignore
   }
 }
+
+export function getAuth(): { apiKey: string; user: StoredUser | null } | null {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+  return { apiKey, user: getStoredUser() };
+}
