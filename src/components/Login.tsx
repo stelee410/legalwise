@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Scale, Smartphone, Lock, ShieldCheck, ChevronDown, Mail, User, KeyRound } from 'lucide-react';
+import { Scale, Smartphone, Lock, ShieldCheck, ChevronDown, Mail, User, KeyRound, LogOut, ShieldX } from 'lucide-react';
 import { Role } from '../types';
 import { cn } from '../lib/utils';
 import { login, register } from '../services/auth';
-import { setAuth } from '../lib/authStorage';
+import { setAuth, clearAuth } from '../lib/authStorage';
 import { isApiError } from '../types/auth';
 import { WORKSPACE_CODE, WORKSPACE_JOIN_CODE } from '../config/api';
 import { getUserWorkspaces, joinWorkspace, switchWorkspace } from '../services/workspace';
@@ -13,21 +13,52 @@ interface LoginProps {
   onLogin: (role: Role) => void;
 }
 
+type AccessDeniedInfo = {
+  role: Role;
+  message: string;
+} | null;
+
 export default function Login({ onLogin }: LoginProps) {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role>('individual');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [invitationCode, setInvitationCode] = useState('');
+  const [invitationCode, setInvitationCode] = useState('legalwise');
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [accessDenied, setAccessDenied] = useState<AccessDeniedInfo>(null);
 
   const roles = [
     { id: 'individual', title: '个人用户', accent: 'bg-blue-600' },
     { id: 'lawyer', title: '律师端', accent: 'bg-emerald-600' },
     { id: 'judiciary', title: '司法端', accent: 'bg-stone-600' }
   ];
+
+  const checkRolePermission = async (targetRole: Role): Promise<boolean> => {
+    if (targetRole !== 'lawyer') return true;
+    try {
+      const workspaces = await getUserWorkspaces();
+      const targetCode = WORKSPACE_CODE?.trim();
+      if (!targetCode) return true;
+      const currentWorkspace = workspaces.find(
+        (item) => (item.workspace?.code ?? (item as { code?: string }).code) === targetCode
+      );
+      const userRole = currentWorkspace?.role;
+      if (userRole === 'owner' || userRole === 'admin') {
+        return true;
+      }
+      return false;
+    } catch {
+      return true;
+    }
+  };
+
+  const handleAccessDeniedLogout = () => {
+    clearAuth();
+    setAccessDenied(null);
+    setPassword('');
+  };
 
   const ensureInWorkspace = async (): Promise<void> => {
     const targetCode = WORKSPACE_CODE?.trim();
@@ -62,6 +93,14 @@ export default function Login({ onLogin }: LoginProps) {
       setAuth(api_key, user || creator ? { id: (user?.id ?? (creator as { id?: string })?.id) ?? '', username: (user as { username?: string })?.username ?? (creator as { username?: string })?.username } : undefined);
       if (WORKSPACE_CODE?.trim()) {
         await ensureInWorkspace();
+      }
+      const hasPermission = await checkRolePermission(selectedRole);
+      if (!hasPermission) {
+        setAccessDenied({
+          role: selectedRole,
+          message: '您暂时还没有律师端的访问权限，请联系管理员开通。',
+        });
+        return;
       }
       onLogin(selectedRole);
     } catch (err) {
@@ -116,6 +155,58 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   const currentRoleData = roles.find(r => r.id === selectedRole);
+
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 via-emerald-600 to-stone-600" />
+        <div className="absolute -top-24 -right-24 w-64 h-64 bg-red-50 rounded-full blur-3xl opacity-50" />
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-orange-50 rounded-full blur-3xl opacity-50" />
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md z-10"
+        >
+          <div className="text-center mb-10">
+            <motion.div
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-2xl text-red-600 mb-4 shadow-xl"
+            >
+              <ShieldX className="w-8 h-8" />
+            </motion.div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">访问受限</h1>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl border border-gray-100 p-8 shadow-xl shadow-gray-100/50 text-center"
+          >
+            <div className="mb-8">
+              <p className="text-gray-600 leading-relaxed">
+                {accessDenied.message}
+              </p>
+            </div>
+
+            <button
+              onClick={handleAccessDeniedLogout}
+              className="w-full py-4 rounded-2xl bg-gray-900 text-white font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-5 h-5" />
+              返回登录
+            </button>
+          </motion.div>
+
+          <p className="text-center text-xs text-gray-400 mt-12">
+            © 2026 法智通 LegalWise AI. 守护您的法律权益。<br />
+            京ICP备20260001号-1
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
@@ -217,21 +308,6 @@ export default function Login({ onLogin }: LoginProps) {
                     onChange={(e) => setInvitationCode(e.target.value)}
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                   />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">登录身份</label>
-                <div className="relative">
-                  <select
-                    value={selectedRole || ''}
-                    onChange={(e) => setSelectedRole(e.target.value as Role)}
-                    className="w-full pl-4 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all appearance-none cursor-pointer text-gray-700"
-                  >
-                    {roles.map((role) => (
-                      <option key={role.id} value={role.id}>{role.title}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                 </div>
               </div>
               <button

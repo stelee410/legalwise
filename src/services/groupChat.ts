@@ -74,24 +74,58 @@ export async function listGroupChats(params?: {
   return list;
 }
 
+/** 添加好友 - POST /api/v1/friends
+ * 文档 §4.7：添加 Agent 为好友
+ */
+async function addFriend(agentId: string | number): Promise<void> {
+  const id = typeof agentId === 'number' ? agentId : parseInt(String(agentId), 10);
+  if (Number.isNaN(id)) throw new Error('无效的 Agent ID');
+  const res = await requestWithAuth('/api/v1/friends', {
+    method: 'POST',
+    body: { agent_id: id },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const message = (err as { error?: { message?: string } })?.error?.message || '添加好友失败';
+    if (!message.includes('already') && !message.includes('已经')) {
+      throw new Error(message);
+    }
+  }
+}
+
 /** 创建群聊 - POST /api/v1/user/group-chats
  * 个人用户与 VITE_SYSTEM_AGENT_CODE 设定的 AI Agent 组成群组
  * API 要求: agent_ids (数字数组), topic, title
+ * 如果 Agent 不是好友，会自动添加好友后重试
  */
 export async function createGroupChat(agentId: string | number): Promise<GroupChatInfo> {
   const id = typeof agentId === 'number' ? agentId : parseInt(String(agentId), 10);
   if (Number.isNaN(id)) throw new Error('无效的 Agent ID');
-  const res = await requestWithAuth('/api/v1/user/group-chats', {
-    method: 'POST',
-    body: {
-      agent_ids: [id],
-      topic: '新建对话',
-      title: '新建对话',
-    },
-  });
-  const data = await parseJsonResponse<GroupChatInfo>(res);
-  if (!data?.id) throw new Error('创建群聊失败');
-  return data;
+
+  const doCreate = async (): Promise<GroupChatInfo> => {
+    const res = await requestWithAuth('/api/v1/user/group-chats', {
+      method: 'POST',
+      body: {
+        agent_ids: [id],
+        topic: '新建对话',
+        title: '新建对话',
+      },
+    });
+    const data = await parseJsonResponse<GroupChatInfo>(res);
+    if (!data?.id) throw new Error('创建群聊失败');
+    return data;
+  };
+
+  try {
+    return await doCreate();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '';
+    if (message.toLowerCase().includes('not a friend') || message.includes('不是好友')) {
+      await addFriend(id);
+      return await doCreate();
+    }
+    throw err;
+  }
 }
 
 /** 群聊详情 - GET /api/v1/user/group-chats/{id} */

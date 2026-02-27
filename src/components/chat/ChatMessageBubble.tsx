@@ -14,16 +14,41 @@ function getImagePreviewUrl(att: { token?: string; previewUrl?: string; type?: s
   return undefined;
 }
 
+/**
+ * 预处理消息内容：
+ * 1. 去除整体被代码块包裹的情况
+ * 2. 将内部的 markdown/md/text 代码块解包为普通 markdown 内容
+ */
+function preprocessContent(content: string): string {
+  let result = content.trim();
+  
+  // 匹配整体被代码块包裹的内容（支持多种语言标记或无标记）
+  const wholeBlockRegex = /^```[\w]*\s*\n?([\s\S]*?)\n?```\s*$/;
+  const match = result.match(wholeBlockRegex);
+  if (match) {
+    result = match[1].trim();
+  }
+  
+  // 将内部的 markdown/md/text 代码块解包为普通内容
+  // 匹配 ```markdown ... ``` 或 ```md ... ``` 或 ```text ... ``` 或 ``` ... ```
+  result = result.replace(
+    /```(?:markdown|md|text|txt)?\s*\n([\s\S]*?)\n```/g,
+    (_, innerContent) => innerContent.trim()
+  );
+  
+  return result;
+}
+
 type Variant = 'individual' | 'lawyer';
 
 const variantStyles = {
   individual: {
     user: 'bg-blue-600 text-white rounded-tr-none',
-    assistant: 'bg-gray-50 text-gray-800 border border-gray-100 rounded-tl-none prose-pre:bg-gray-200 prose-pre:text-gray-800 prose-code:bg-gray-200 prose-code:text-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none',
+    assistant: 'bg-gray-50 text-gray-800 border border-gray-100 rounded-tl-none prose-pre:bg-gray-300 prose-pre:text-gray-800 prose-code:bg-gray-300 prose-code:text-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none',
   },
   lawyer: {
     user: 'bg-emerald-600 text-white rounded-tr-none',
-    assistant: 'bg-gray-50 text-gray-800 border border-gray-100 rounded-tl-none prose-emerald prose-pre:bg-gray-200 prose-pre:text-gray-800 prose-code:bg-gray-200 prose-code:text-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none',
+    assistant: 'bg-gray-50 text-gray-800 border border-gray-100 rounded-tl-none prose-emerald prose-pre:bg-gray-300 prose-pre:text-gray-800 prose-code:bg-gray-300 prose-code:text-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none',
   },
 };
 
@@ -80,7 +105,7 @@ export default function ChatMessageBubble({ message, variant = 'individual' }: C
             isUser ? 'prose-invert' : ''
           )}
         >
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+          <ReactMarkdown>{preprocessContent(message.content)}</ReactMarkdown>
         </div>
       </div>
     </motion.div>
