@@ -77,6 +77,7 @@ export default function IndividualPortal() {
   const agentIdRef = useRef<string | null>(null);
   const assistantAgentIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const programmaticNavRef = useRef<string | null>(null);
 
   const { pendingFiles, addFiles, removePendingFile, clearPendingFiles } = useFileUpload();
 
@@ -237,7 +238,12 @@ export default function IndividualPortal() {
   }, [activeSession?.messages]);
 
   useEffect(() => {
+    if (programmaticNavRef.current && urlSessionId === programmaticNavRef.current) {
+      programmaticNavRef.current = null;
+    }
     if (urlSessionId && urlSessionId !== activeSessionId) {
+      // 程序化跳转（如发起新对话）时，urlSessionId 可能尚未更新，不要用旧值覆盖
+      if (programmaticNavRef.current) return;
       setActiveSessionId(urlSessionId);
     }
   }, [urlSessionId, activeSessionId]);
@@ -299,6 +305,7 @@ export default function IndividualPortal() {
         createdAt: Date.now(),
       };
       setSessions((prev) => [newSession, ...prev]);
+      programmaticNavRef.current = newSession.id;
       setActiveSessionId(newSession.id);
       navigate(`/individual/chat/${newSession.id}`);
       setIsSidebarOpen(false);
@@ -324,6 +331,7 @@ export default function IndividualPortal() {
         agentName: agent.name || '律师助手',
       };
       setSessions((prev) => [newSession, ...prev]);
+      programmaticNavRef.current = newSession.id;
       setActiveSessionId(newSession.id);
       navigate(`/individual/chat/${newSession.id}`);
       setIsDiscoverOpen(false);
@@ -453,6 +461,7 @@ export default function IndividualPortal() {
           createdAt: Date.now(),
         };
         setSessions((prev) => [newSession, ...prev]);
+        programmaticNavRef.current = newSession.id;
         setActiveSessionId(newSession.id);
         currentSessionId = newSession.id;
       } catch (e) {
